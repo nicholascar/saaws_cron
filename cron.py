@@ -46,10 +46,7 @@ def job_wdtf_export(day):
     logging.debug('ran job_wdtf_export(' + day.strftime('%Y-%m-%d') + ')')
 
     import functions_wdtf
-    conn = functions.db_connect()
-    zfp = functions_wdtf.make_wdtf_zip_file(conn, 'SAMDB', day, settings.APPLICATION_DIR)
-    s = functions_wdtf.send_wdtf_zipfile(conn, zfp)
-    functions.db_disconnect(conn)
+    s = functions_wdtf.send_add_wdtf_zipfiles_to_bom(day)
 
     if not s:
         functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'ERROR: WDTF exporter broken', 'check log')
@@ -58,8 +55,15 @@ def job_wdtf_export(day):
 
 
 def job_dfw_csv_export(day):
-    logging.debug('ran job_dfw_csv_export(' + day.strftime('%Y-%m-%d') + ')')
-    return [True, 'job dfw_csv_export']
+    logging.debug('ran job_csv_export(' + day.strftime('%Y-%m-%d') + ')')
+
+    import functions_csv
+    s = functions_csv.send_all_csv_files_to_dfw(day)
+
+    if not s:
+        functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'ERROR: CSV exporter broken', 'check log')
+
+    return
 
 
 def job_calc_days(day):
@@ -82,10 +86,6 @@ def job_check_latest_readings():
     return [True, 'job job_check_latest_readings']
 
 
-def report_failed_job(job_name):
-    pass
-
-
 if __name__ == "__main__":
     logging.basicConfig(filename=settings.LOG_FILE,
                         format='%(asctime)s %(levelname)s %(message)s',
@@ -98,26 +98,30 @@ if __name__ == "__main__":
     try:
         # these run every hour
         job_check_deamon_running()
-        '''
+
+        # these run on specific hours
         if hr == 1:
             yesterday = datetime.datetime.now() - timedelta(hours=24)
             job_wdtf_export(yesterday)
             job_dfw_csv_export(yesterday)
         elif hr == 2:
-            yesterday = datetime.datetime.now() - timedelta(hours=24)
-            job_calc_days(yesterday)
+            #yesterday = datetime.datetime.now() - timedelta(hours=24)
+            #job_calc_days(yesterday)
+            pass
         elif hr == 8:
-            job_check_deamon_running()
-            yesterday = datetime.datetime.now() - timedelta(hours=24)
-            job_check_days_values(yesterday)
+            #yesterday = datetime.datetime.now() - timedelta(hours=24)
+            #job_check_days_values(yesterday)
             # check minute values for yesterday to cover time after 15:00 check
-            job_check_minutes_values(yesterday)
+            #job_check_minutes_values(yesterday)
+            pass
         elif hr in [9, 12, 15]:
-            today = datetime.datetime.now()
-            job_check_minutes_values(today)
+            #today = datetime.datetime.now()
+            #job_check_minutes_values(today)
+            pass
         elif hr == 10:
-            job_check_latest_readings()
-        '''
+            #job_check_latest_readings()
+            pass
+
     except Exception, e:
         logging.error(e.message)
 else:

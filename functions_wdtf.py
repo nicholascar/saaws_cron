@@ -3,8 +3,8 @@ import logging
 import functions
 import zipfile
 import os
-import re
 from ftplib import FTP
+import settings
 
 
 # TODO: change the reported station name from the NRM aws_id to the BoM number in tbl_stations
@@ -246,49 +246,25 @@ def send_wdtf_zipfile(conn, zipfile_path):
     ftp.storbinary("STOR " + zipfile_path.split('/')[-1], open(zipfile_path, 'rb'))
     ftp.quit()
 
-
-    # delete zip file on disk
-    os.remove(zipfile_path)
-
     return True
 
 
-def send_wdtf_zipfiles(conn, zipfiles_folder_path):
+def send_add_wdtf_zipfiles_to_bom(day):
     """
-    Send the zipped WDTF file collection to the BoM by FTP using owner's FTP WDTF details
-    Calls make_wdtf_zip_file(owner)
-    :param owner: string
-    :param in_date: date string
-    :return: True/False if successful
+    Send the all owners' WDTF zipfiles to the BoM by FTP using owner's FTP WDTF details
+
+    :param day: datetime
+    :return: True if successful
     """
-    logging.debug("call send_wdtf_zipfiles(" + zipfiles_folder_path + ')')
+    logging.debug("call send_add_wdtf_zipfiles_to_bom(" + day.strftime('%Y-%m-%d') + ')')
 
-    # get each file
-    files = [f for f in os.listdir(zipfiles_folder_path) if re.match(r'.*\.zip', f)]
+    conn = functions.db_connect()
+    zfp = make_wdtf_zip_file(conn, 'SAMDB', day, settings.APPLICATION_DIR)
+    s = send_wdtf_zipfile(conn, zfp)
+    functions.db_disconnect(conn)
 
-    # get the owner's FTP details from the first zip file
-    wdtf_data_provider_id = files[0].split(os.path.sep)[-1].split('.')[0]
-    sql = "SELECT wdtf_server, wdtf_id, wdtf_password FROM tbl_owners WHERE wdtf_id = '" + wdtf_data_provider_id + "';"
+    # delete zipfile on disk
+    os.remove(zfp)
 
-    if conn is None:
-        conn = functions.db_connect()
+    return s
 
-    for row in functions.db_query(conn, sql):
-        svr = row[0]
-        usr = row[1]
-        pwd = row[2]
-
-    # send the zip file
-    ftp = FTP(svr)
-    ftp.set_debuglevel(0)
-    ftp.login(usr, pwd)
-    ftp.cwd('/register/' + usr + '/incoming/data')
-    for f in files:
-        ftp.storbinary("STOR " + f, open(f, 'rb'))
-    ftp.quit()
-
-    # delete zip file on disk
-    for f in files:
-        os.remove(f)
-
-    return True
