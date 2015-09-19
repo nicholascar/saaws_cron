@@ -9,7 +9,7 @@ import functions
 def job_check_deamon_running():
     # get the PID from file
     try:
-        with open('/opt/procdeamon/procdeamon.pid', 'r') as p:
+        with open('/opt/processor/procdeamon.pid', 'r') as p:
             pid_file = p.read()
     except IOError, e:
         fail_text = 'PID file not found or cannot be read'
@@ -47,15 +47,12 @@ def job_wdtf_export(day):
 
     import functions_wdtf
     conn = functions.db_connect()
-    #zfp = functions_wdtf.make_wdtf_zip_file(conn, 'SAMDB', day, settings.APPLICATION_DIR)
-    zfp = 'c:/work/saaws_cron/w00208.20150918093000.zip'
+    zfp = functions_wdtf.make_wdtf_zip_file(conn, 'SAMDB', day, settings.APPLICATION_DIR)
     s = functions_wdtf.send_wdtf_zipfile(conn, zfp)
     functions.db_disconnect(conn)
 
-    if s:
-        print 'ok'
-    else:
-        print 'error sending zipfile'
+    if not s:
+        functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'ERROR: WDTF exporter broken', 'check log')
 
     return
 
