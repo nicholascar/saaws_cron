@@ -79,7 +79,82 @@ def job_calc_days(day):
 
 def job_check_days_values(day):
     logging.debug('ran check_days_values(' + day.strftime('%Y-%m-%d') + ')')
-    return [True, 'job check_days_values']
+
+    sql = '''
+        (
+            # air temp null
+            SELECT
+                aws_id,
+                'airT' AS 'var',
+                'air temp is null' AS 'msg'
+             FROM tbl_data_days
+            WHERE
+                stamp = "''' + day.strftime('%Y-%m-%d') + '''" AND
+                aws_id NOT LIKE 'TBRG%' AND
+                airT_avg IS NULL
+        )
+        UNION
+        (
+            # air temp range
+            SELECT
+                aws_id,
+                'airT' AS 'var',
+                'air temp avg is outside allowed range (5 - 35)' AS 'msg'
+             FROM tbl_data_days
+            WHERE
+                stamp = "''' + day.strftime('%Y-%m-%d') + '''" AND
+                aws_id NOT LIKE 'TBRG%' AND
+                airT_avg NOT BETWEEN 5 AND 35
+        )
+        UNION
+        (
+            # ET null
+            SELECT
+                aws_id,
+                'et_asce_t' AS 'var',
+                'ET is null' AS 'msg'
+            FROM tbl_data_days
+            WHERE
+                stamp = "''' + day.strftime('%Y-%m-%d') + '''" AND
+                aws_id NOT LIKE 'TBRG%' AND
+                et_asce_t IS NULL
+        )
+        UNION
+        (
+            # ET range
+            SELECT
+                aws_id,
+                'et_asce_t' AS 'var',
+                'ET outside allowed range (1 - 15)' AS 'msg'
+            FROM tbl_data_days
+            WHERE
+                stamp = "''' + day.strftime('%Y-%m-%d') + '''" AND
+                aws_id NOT LIKE 'TBRG%' AND
+                et_asce_t NOT BETWEEN 1 AND 15
+        )
+        ORDER BY aws_id;
+        '''
+
+    # get the data
+    conn = functions.db_connect()
+    rows = functions.db_query(conn, sql)
+    functions.db_disconnect(conn)
+
+    # make a table of the data
+    tbl = '<table>\n'
+    tbl += '\t<tr><th>aws_id</th><th>variable</th><th>message</th></tr>\n'
+    cnt = 0
+    for row in rows:
+        tbl += '\t<tr><td><a href="http://aws-samdbnrm.sa.gov.au?aws_id=' + row['aws_id'] + '&view=7days">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td></tr>\n'
+        cnt += 1
+    tbl += '</table>'
+
+    html = '<h4>Errors in days readings for ' + day.strftime('%Y-%m-%d') + '</h4>\n' + tbl
+    # send an email if there are errors
+    if cnt > 0:
+        functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'days data errors', 'message is in html', html)
+
+    return
 
 
 def job_check_minutes_values(day):
@@ -154,7 +229,7 @@ def job_check_minutes_values(day):
         cnt += 1
     tbl += '</table>'
 
-    html = '<h4>Errors in minute readings for ' + day.strftime('%Y-%m-%d') + '</h4>'
+    html = '<h4>Errors in minute readings for ' + day.strftime('%Y-%m-%d') + '</h4>\n' + tbl
     # send an email if there are errors
     if cnt > 0:
         functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'minute data errors', 'message is in html', html)
@@ -189,10 +264,9 @@ if __name__ == "__main__":
             job_calc_days(yesterday)
         elif hr == 8:
             yesterday = datetime.datetime.now() - timedelta(hours=24)
-            #job_check_days_values(yesterday)
+            job_check_days_values(yesterday)
             # check minute values for yesterday to cover time after 15:00 check
             job_check_minutes_values(yesterday)
-            pass
         elif hr in [9, 12, 15]:
             today = datetime.datetime.now()
             job_check_minutes_values(today)
@@ -200,7 +274,6 @@ if __name__ == "__main__":
         elif hr == 10:
             #job_check_latest_readings()
             pass
-
     except Exception, e:
         logging.error(e.message)
 else:
