@@ -6,7 +6,7 @@ from datetime import timedelta
 import functions
 
 
-def job_check_deamon_running():
+def job_check_daemon_running():
     # get the PID from file
     try:
         with open('/opt/processor/procdeamon.pid', 'r') as p:
@@ -68,6 +68,12 @@ def job_dfw_csv_export(day):
 
 def job_calc_days(day):
     logging.debug('ran job_calc_days(' + day.strftime('%Y-%m-%d') + ')')
+
+    sql = 'CALL proc_day_calcs("' + day.strftime('%Y-%m-%d') + '")'
+    conn = functions.db_connect()
+    functions.db_query(conn, sql)
+    functions.db_disconnect(conn)
+
     return [True, 'job calc_days']
 
 
@@ -78,7 +84,82 @@ def job_check_days_values(day):
 
 def job_check_minutes_values(day):
     logging.debug('ran job_check_minutes_values(' + day.strftime('%Y-%m-%d') + ')')
-    return [True, 'job check_minutes_values']
+
+    sql = '''
+            (
+                # air temp
+                SELECT
+                    aws_id,
+                    'airT' AS var,
+                    'air temp outside allowed range (-10 - 45)' AS msg
+                FROM tbl_data_minutes
+                WHERE
+                    DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
+                    (airT IS NULL OR airT NOT BETWEEN -10 AND 45)
+                GROUP BY aws_id
+            )
+            UNION
+            (
+                # wind
+                SELECT
+                    aws_id,
+                    'Wmax' AS var,
+                    'wind max zero or null' AS msg
+                FROM tbl_data_minutes
+                WHERE
+                    DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
+                    (Wmax IS NULL OR Wmax <= 0)
+                GROUP BY aws_id
+            )
+            UNION
+            (
+                # rain
+                SELECT
+                    aws_id,
+                    'rain' AS var,
+                    'rain outside allowed range (0 - 100)' AS msg
+                FROM tbl_data_minutes
+                WHERE
+                    DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
+                    (rain IS NULL OR rain NOT BETWEEN 0 AND 100)
+                GROUP BY aws_id
+            )
+            UNION
+            (
+                # battery
+                SELECT
+                    aws_id,
+                    'batt' AS var,
+                    'battery outside allowed range (12.5 - 15.5)' AS msg
+                FROM tbl_data_minutes
+                WHERE
+                    DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
+                    (batt IS NULL OR batt NOT BETWEEN 12.5 AND 15.5)
+                GROUP BY aws_id
+            )
+            ORDER BY aws_id;
+    '''
+
+    # get the data
+    conn = functions.db_connect()
+    rows = functions.db_query(conn, sql)
+    functions.db_disconnect(conn)
+
+    # make a table of the data
+    tbl = '<table>\n'
+    tbl += '\t<tr><th>aws_id</th><th>variable</th><th>message</th></tr>\n'
+    cnt = 0
+    for row in rows:
+        tbl += '\t<tr><td><a href="http://aws-samdbnrm.sa.gov.au?aws_id=' + row['aws_id'] + '&view=today">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td></tr>\n'
+        cnt += 1
+    tbl += '</table>'
+
+    html = '<h4>Errors in minute readings for ' + day.strftime('%Y-%m-%d') + '</h4>'
+    # send an email if there are errors
+    if cnt > 0:
+        functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'minute data errors', 'message is in html', html)
+
+    return
 
 
 def job_check_latest_readings():
@@ -90,14 +171,13 @@ if __name__ == "__main__":
     logging.basicConfig(filename=settings.LOG_FILE,
                         format='%(asctime)s %(levelname)s %(message)s',
                         level=settings.LOG_LEVEL)
-
-    logging.debug('ran saaws_cron main()')
+    # logging.debug('ran saaws_cron main()')
 
     hr = datetime.datetime.now().hour
 
     try:
         # these run every hour
-        job_check_deamon_running()
+        job_check_daemon_running()
 
         # these run on specific hours
         if hr == 1:
@@ -105,18 +185,17 @@ if __name__ == "__main__":
             job_wdtf_export(yesterday)
             job_dfw_csv_export(yesterday)
         elif hr == 2:
-            #yesterday = datetime.datetime.now() - timedelta(hours=24)
-            #job_calc_days(yesterday)
-            pass
+            yesterday = datetime.datetime.now() - timedelta(hours=24)
+            job_calc_days(yesterday)
         elif hr == 8:
-            #yesterday = datetime.datetime.now() - timedelta(hours=24)
+            yesterday = datetime.datetime.now() - timedelta(hours=24)
             #job_check_days_values(yesterday)
             # check minute values for yesterday to cover time after 15:00 check
-            #job_check_minutes_values(yesterday)
+            job_check_minutes_values(yesterday)
             pass
         elif hr in [9, 12, 15]:
-            #today = datetime.datetime.now()
-            #job_check_minutes_values(today)
+            today = datetime.datetime.now()
+            job_check_minutes_values(today)
             pass
         elif hr == 10:
             #job_check_latest_readings()
