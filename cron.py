@@ -175,16 +175,15 @@ def job_check_minutes_values(day):
             )
             UNION
             (
-                # wind
-                SELECT
-                    aws_id,
-                    'Wmax' AS var,
-                    'wind max zero or null' AS msg
-                FROM tbl_data_minutes
-                WHERE
-                    DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
-                    (Wmax IS NULL OR Wmax <= 0)
-                GROUP BY aws_id
+                # wind			
+				SELECT 
+					aws_id,  
+					'Wmax' AS var,
+					'wind max zero or null' AS msg	
+				FROM tbl_data_minutes 
+				WHERE DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''"
+				GROUP BY aws_id
+				HAVING (SUM(Wmax) <= 0 OR SUM(Wmax) IS NULL)
             )
             UNION
             (
