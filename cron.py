@@ -157,9 +157,11 @@ def job_check_days_values(day):
     return
 
 
+# TODO: remove 6-7 allowed battery value range
 def job_check_minutes_values(day):
     logging.debug('ran job_check_minutes_values(' + day.strftime('%Y-%m-%d') + ')')
 
+	# for rain gauges, only check rain
     sql = '''
             (
                 # air temp
@@ -169,6 +171,7 @@ def job_check_minutes_values(day):
                     'air temp outside allowed range (-10 - 45)' AS msg
                 FROM tbl_data_minutes
                 WHERE
+					aws_id NOT LIKE 'TBRG%' AND
                     DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
                     (airT IS NULL OR airT NOT BETWEEN -10 AND 45)
                 GROUP BY aws_id
@@ -181,7 +184,9 @@ def job_check_minutes_values(day):
 					'Wmax' AS var,
 					'wind max zero or null' AS msg	
 				FROM tbl_data_minutes 
-				WHERE DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''"
+				WHERE 
+					aws_id NOT LIKE 'TBRG%' AND
+					DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''"
 				GROUP BY aws_id
 				HAVING (SUM(Wmax) <= 0 OR SUM(Wmax) IS NULL)
             )
@@ -200,15 +205,19 @@ def job_check_minutes_values(day):
             )
             UNION
             (
-                # battery
+                # battery - 6-7 range for AWNRM
                 SELECT
                     aws_id,
                     'batt' AS var,
-                    'battery outside allowed range (12.5 - 15.5)' AS msg
+                    'battery outside allowed range (12 - 15.5)' AS msg
                 FROM tbl_data_minutes
                 WHERE
                     DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
-                    (batt IS NULL OR batt NOT BETWEEN 12.5 AND 15.5)
+					(						
+						batt IS NULL OR 
+						batt NOT BETWEEN 6 AND 7 OR
+						batt NOT BETWEEN 12 AND 15.5 OR
+					)
                 GROUP BY aws_id
             )
             ORDER BY aws_id;
@@ -236,6 +245,7 @@ def job_check_minutes_values(day):
     return
 
 
+# TODO: complete function
 def job_check_latest_readings():
     logging.debug('ran job_check_latest_readings()')
     return [True, 'job job_check_latest_readings']
