@@ -157,7 +157,6 @@ def job_check_days_values(day):
     return
 
 
-# TODO: remove 6-7 allowed battery value range
 def job_check_minutes_values(day):
     logging.debug('ran job_check_minutes_values(' + day.strftime('%Y-%m-%d') + ')')
 
@@ -168,12 +167,12 @@ def job_check_minutes_values(day):
                 SELECT
                     aws_id,
                     'airT' AS var,
-                    'air temp outside allowed range (-10 - 45)' AS msg
+                    'air temp outside allowed range (-10, 50)' AS msg
                 FROM tbl_data_minutes
                 WHERE
 					aws_id NOT LIKE 'TBRG%' AND
                     DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
-                    (airT IS NULL OR airT NOT BETWEEN -10 AND 45)
+                    (airT IS NULL OR airT NOT BETWEEN -10 AND 50)
                 GROUP BY aws_id
             )
             UNION
@@ -196,7 +195,7 @@ def job_check_minutes_values(day):
                 SELECT
                     aws_id,
                     'rain' AS var,
-                    'rain outside allowed range (0 - 100)' AS msg
+                    'rain outside allowed range (0, 100)' AS msg
                 FROM tbl_data_minutes
                 WHERE
                     DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
@@ -209,14 +208,14 @@ def job_check_minutes_values(day):
                 SELECT
                     aws_id,
                     'batt' AS var,
-                    'battery outside allowed range (12 - 15.5)' AS msg
+                    'battery outside allowed range (12, 15.5)' AS msg
                 FROM tbl_data_minutes
                 WHERE
                     DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
 					(						
 						batt IS NULL OR 
-						batt NOT BETWEEN 6 AND 7 OR
-						batt NOT BETWEEN 12 AND 15.5 OR
+						#batt NOT BETWEEN 6 AND 7 OR -- I don't know why I can't include this range here. 
+						batt NOT BETWEEN 12 AND 15.5
 					)
                 GROUP BY aws_id
             )
@@ -248,7 +247,36 @@ def job_check_minutes_values(day):
 # TODO: complete function
 def job_check_latest_readings():
     logging.debug('ran job_check_latest_readings()')
-    return [True, 'job job_check_latest_readings']
+    sql = '''
+	SELECT m.aws_id, m.name, m.owner FROM (
+	SELECT a.aws_id AS aws_id, a.name, a.owner, b.aws_id AS other FROM 
+	(SELECT aws_id, NAME, OWNER FROM tbl_stations WHERE STATUS = 'on' ORDER BY aws_id) AS a
+	LEFT JOIN 
+	(SELECT DISTINCT aws_id FROM tbl_data_minutes WHERE DATE(stamp) = CURDATE()) AS b
+	ON a.aws_id = b.aws_id
+	HAVING b.aws_id IS NULL) AS m;		
+	'''
+	
+    # get the data
+    conn = functions.db_connect()
+    rows = functions.db_query(conn, sql)
+    functions.db_disconnect(conn)
+	
+    # make a table of the data
+    tbl = '<table>\n'
+    tbl += '\t<tr><th>aws_id</th><th>Name</th><th>Owner</th></tr>\n'
+    cnt = 0
+    for row in rows:
+        tbl += '\t<tr><td><a href="http://aws-samdbnrm.sa.gov.au?aws_id=' + row['aws_id'] + '">' + row['aws_id'] + '</a></td><td>' + row['name'] + '</td><td>' + row['owner'] + '</td></tr>\n'
+        cnt += 1
+    tbl += '</table>'	
+	
+    html = '<h4>Stations not reporting today</h4>\n' + tbl
+    # send an email if there are errors
+    if cnt > 0:
+        functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'today\'s missing data', 'message is in html', html)	
+	
+    return
 
 
 if __name__ == "__main__":
@@ -279,10 +307,8 @@ if __name__ == "__main__":
         elif hr in [9, 12, 15]:
             today = datetime.datetime.now()
             job_check_minutes_values(today)
-            pass
         elif hr == 10:
-            #job_check_latest_readings()
-            pass
+            job_check_latest_readings()
     except Exception, e:
         logging.error(e.message)
 else:
