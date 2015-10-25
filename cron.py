@@ -145,7 +145,7 @@ def job_check_days_values(day):
     tbl += '\t<tr><th>aws_id</th><th>variable</th><th>message</th></tr>\n'
     cnt = 0
     for row in rows:
-        tbl += '\t<tr><td><a href="http://aws-samdbnrm.sa.gov.au?aws_id=' + row['aws_id'] + '&view=7days">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td></tr>\n'
+        tbl += '\t<tr><td><a href="http://aws.naturalresources.sa.gov.au/samurraydarlingbasin?aws_id=' + row['aws_id'] + '&view=7days">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td></tr>\n'
         cnt += 1
     tbl += '</table>'
 
@@ -232,7 +232,7 @@ def job_check_minutes_values(day):
     tbl += '\t<tr><th>aws_id</th><th>variable</th><th>message</th></tr>\n'
     cnt = 0
     for row in rows:
-        tbl += '\t<tr><td><a href="http://aws-samdbnrm.sa.gov.au?aws_id=' + row['aws_id'] + '&view=today">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td></tr>\n'
+        tbl += '\t<tr><td><a href="http://aws.naturalresources.sa.gov.au/samurraydarlingbasin?aws_id=' + row['aws_id'] + '&view=today">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td></tr>\n'
         cnt += 1
     tbl += '</table>'
 
@@ -244,38 +244,72 @@ def job_check_minutes_values(day):
     return
 
 
-# TODO: complete function
 def job_check_latest_readings():
     logging.debug('ran job_check_latest_readings()')
     sql = '''
-	SELECT m.aws_id, m.name, m.owner FROM (
-	SELECT a.aws_id AS aws_id, a.name, a.owner, b.aws_id AS other FROM 
-	(SELECT aws_id, NAME, OWNER FROM tbl_stations WHERE STATUS = 'on' ORDER BY aws_id) AS a
-	LEFT JOIN 
-	(SELECT DISTINCT aws_id FROM tbl_data_minutes WHERE DATE(stamp) = CURDATE()) AS b
-	ON a.aws_id = b.aws_id
-	HAVING b.aws_id IS NULL) AS m;		
-	'''
-	
+    SELECT m.aws_id, m.name, m.owner, m.manager_email FROM (
+        SELECT
+            a.aws_id AS aws_id,
+            a.name,
+            a.owner,
+            a.manager_email,
+            b.aws_id AS other
+        FROM (
+            SELECT
+                aws_id,
+                name,
+                owner,
+                manager_email
+            FROM tbl_stations
+            INNER JOIN tbl_owners
+            ON tbl_stations.owner = tbl_owners.owner_id
+            WHERE STATUS = 'on' ORDER BY aws_id) AS a
+        LEFT JOIN (SELECT DISTINCT aws_id FROM tbl_data_minutes WHERE DATE(stamp) = CURDATE()) AS b
+        ON a.aws_id = b.aws_id
+        HAVING b.aws_id IS NULL) AS m
+    ORDER BY OWNER, aws_id;
+    '''
+
     # get the data
     conn = functions.db_connect()
     rows = functions.db_query(conn, sql)
     functions.db_disconnect(conn)
-	
-    # make a table of the data
-    tbl = '<table>\n'
-    tbl += '\t<tr><th>aws_id</th><th>Name</th><th>Owner</th></tr>\n'
-    cnt = 0
+
+    # split the data into per-owner chunks
+
+    last_owner = ''
+    last_owner_email = ''
+    last_owner_html = ''
+    admin_html = ''
+    html_header = '<h4>Stations that are on but have failed to report today:</h4>\n'
+    table_top = '<table>\n'
+    table_header_owner = '\t<tr><th>aws_id</th><th>Name</th></tr>\n'
+    table_header_admin = '\t<tr><th>aws_id</th><th>Name</th><th>Owner</th></tr>\n'
+    table_bottom = '</table>\n'
     for row in rows:
-        tbl += '\t<tr><td><a href="http://aws-samdbnrm.sa.gov.au?aws_id=' + row['aws_id'] + '">' + row['aws_id'] + '</a></td><td>' + row['name'] + '</td><td>' + row['owner'] + '</td></tr>\n'
-        cnt += 1
-    tbl += '</table>'	
-	
-    html = '<h4>Stations not reporting today</h4>\n' + tbl
-    # send an email if there are errors
-    if cnt > 0:
-        functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'today\'s missing data', 'message is in html', html)	
-	
+        print row
+        # if we have a new owner...
+        if row['owner'] != last_owner:
+            # if last owner was a real owner, send email
+            if last_owner != '':
+                msg = html_header + table_top + table_header_owner + last_owner_html + table_bottom
+                functions.gmail_send(last_owner_email, 'stations failing to report today', 'message is in html', msg)
+            # create new owner
+            last_owner = row['owner']
+            last_owner_email = row['manager_email']
+            last_owner_html = ''
+
+        last_owner_html += '\t<tr><td><a href="http://aws.naturalresources.sa.gov.au/samurraydarlingbasin?aws_id=' + row['aws_id'] + '">' + row['aws_id'] + '</a></td><td>' + row['name'] + '</td></tr>\n'
+        admin_html += '\t<tr><td><a href="http://aws.naturalresources.sa.gov.au/samurraydarlingbasin?aws_id=' + row['aws_id'] + '">' + row['aws_id'] + '</a></td><td>' + row['name'] + '</td><td>' + last_owner + '</td></tr>\n'
+
+    # send to the last owner
+    msg = html_header + table_top + table_header_owner + last_owner_html + table_bottom
+    functions.gmail_send(last_owner_email, 'stations failing to report today', 'message is in html', msg)
+
+    # send the admin email (all stations)
+    msg = html_header + table_top + table_header_admin + admin_html + table_bottom
+    functions.gmail_send(last_owner_email, 'stations failing to report today', 'message is in html', msg)
+
     return
 
 
