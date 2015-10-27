@@ -293,7 +293,7 @@ def job_check_latest_readings():
             # if last owner was a real owner, send email
             if last_owner != '':
                 msg = html_header + table_top + table_header_owner + last_owner_html + table_bottom
-                functions.gmail_send(last_owner_email, 'stations failing to report today', 'message is in html', msg)
+                functions.gmail_send([last_owner_email], 'stations failing to report today', 'message is in html', msg)
             # create new owner
             last_owner = row['owner']
             last_owner_email = row['manager_email']
@@ -304,11 +304,11 @@ def job_check_latest_readings():
 
     # send to the last owner
     msg = html_header + table_top + table_header_owner + last_owner_html + table_bottom
-    functions.gmail_send(last_owner_email, 'stations failing to report today', 'message is in html', msg)
+    functions.gmail_send([last_owner_email], 'stations failing to report today', 'message is in html', msg)
 
     # send the admin email (all stations)
     msg = html_header + table_top + table_header_admin + admin_html + table_bottom
-    functions.gmail_send(last_owner_email, 'stations failing to report today', 'message is in html', msg)
+    functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'stations failing to report today', 'message is in html', msg)
 
     return
 
