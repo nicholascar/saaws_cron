@@ -261,10 +261,17 @@ def send_add_wdtf_zipfiles_to_bom(day):
     conn = functions.db_connect()
     zfp = make_wdtf_zip_file(conn, 'SAMDB', day, settings.APPLICATION_DIR)
     s = send_wdtf_zipfile(conn, zfp)
-    functions.db_disconnect(conn)
-
-    # delete zipfile on disk
     os.remove(zfp)
+
+    zfp = make_wdtf_zip_file(conn, 'SENRM', day, settings.APPLICATION_DIR)
+    s = send_wdtf_zipfile(conn, zfp)
+    os.remove(zfp)
+
+    zfp = make_wdtf_zip_file(conn, 'AWNRM', day, settings.APPLICATION_DIR)
+    s = send_wdtf_zipfile(conn, zfp)
+    os.remove(zfp)
+
+    functions.db_disconnect(conn)
 
     return s
 
