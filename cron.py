@@ -77,169 +77,55 @@ def job_calc_days(day):
     return [True, 'job calc_days']
 
 
-def job_check_days_values(day):
-    logging.debug('ran check_days_values(' + day.strftime('%Y-%m-%d') + ')')
+def job_check_values(day, minutes_or_days):
+    logging.debug('ran job_check_minutes_values(' + day.strftime('%Y-%m-%d') + ',' + minutes_or_days + ')')
 
-    sql = '''
-        (
-            # air temp null
-            SELECT
-                aws_id,
-                'airT' AS 'var',
-                'air temp is null' AS 'msg'
-             FROM tbl_data_days
-            WHERE
-                stamp = "''' + day.strftime('%Y-%m-%d') + '''" AND
-                aws_id NOT LIKE 'TBRG%' AND
-                airT_avg IS NULL
-        )
-        UNION
-        (
-            # air temp range
-            SELECT
-                aws_id,
-                'airT' AS 'var',
-                'air temp avg is outside allowed range (5 - 35)' AS 'msg'
-             FROM tbl_data_days
-            WHERE
-                stamp = "''' + day.strftime('%Y-%m-%d') + '''" AND
-                aws_id NOT LIKE 'TBRG%' AND
-                airT_avg NOT BETWEEN 5 AND 35
-        )
-        UNION
-        (
-            # ET null
-            SELECT
-                aws_id,
-                'et_asce_t' AS 'var',
-                'ET is null' AS 'msg'
-            FROM tbl_data_days
-            WHERE
-                stamp = "''' + day.strftime('%Y-%m-%d') + '''" AND
-                aws_id NOT LIKE 'TBRG%' AND
-                et_asce_t IS NULL
-        )
-        UNION
-        (
-            # ET range
-            SELECT
-                aws_id,
-                'et_asce_t' AS 'var',
-                'ET outside allowed range (1 - 15)' AS 'msg'
-            FROM tbl_data_days
-            WHERE
-                stamp = "''' + day.strftime('%Y-%m-%d') + '''" AND
-                aws_id NOT LIKE 'TBRG%' AND
-                et_asce_t NOT BETWEEN 1 AND 15
-        )
-        ORDER BY aws_id;
-        '''
+    if minutes_or_days == 'minutes':
+        timestep = 'minutes'
+        view = 'today'
+        sql = functions.make_check_minutes_sql(day)
+    else:  # days
+        timestep = 'days'
+        view = '7days'
+        sql = functions.make_check_days_sql(day)
 
     # get the data
     conn = functions.db_connect()
     rows = functions.db_query(conn, sql)
     functions.db_disconnect(conn)
 
-    # make a table of the data
-    tbl = '<table>\n'
-    tbl += '\t<tr><th>aws_id</th><th>variable</th><th>message</th></tr>\n'
-    cnt = 0
+    last_owner = ''
+    last_owner_email = ''
+    last_owner_html = ''
+    admin_html = ''
+    html_header = '<h4>Errors in ' + timestep + ' readings for ' + day.strftime('%Y-%m-%d') + ':</h4>\n'
+    table_top = '<table>\n'
+    table_header_owner = '\t<tr><th>aws_id</th><th>Variable</th><th>Message</th></tr>\n'
+    table_header_admin = '\t<tr><th>aws_id</th><th>Variable</th><th>Message</th><th>Owner</th></tr>\n'
+    table_bottom = '</table>\n'
     for row in rows:
-        tbl += '\t<tr><td><a href="http://aws.naturalresources.sa.gov.au/samurraydarlingbasin?aws_id=' + row['aws_id'] + '&view=7days">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td></tr>\n'
-        cnt += 1
-    tbl += '</table>'
+        print row
+        # if we have a new owner...
+        if row['owner'] != last_owner:
+            # if last owner was a real owner, send email
+            if last_owner != '':
+                msg = html_header + table_top + table_header_owner + last_owner_html + table_bottom
+                functions.gmail_send([last_owner_email], timestep + ' data errors', 'message is in html', msg)
+            # create new owner
+            last_owner = row['owner']
+            last_owner_email = row['manager_email']
+            last_owner_html = ''
 
-    html = '<h4>Errors in days readings for ' + day.strftime('%Y-%m-%d') + '</h4>\n' + tbl
-    # send an email if there are errors
-    if cnt > 0:
-        functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'days data errors', 'message is in html', html)
+        last_owner_html += '\t<tr><td><a href="' + row['station_base_url'] + '?aws_id=' + row['aws_id'] + '&view=' + view + '">' + row['aws_id'] + '</a></td><td>' + row['variable'] + '</td><td>' + row['message'] + '</td></tr>\n'
+        admin_html += '\t<tr><td><a href="' + row['station_base_url'] + '?aws_id=' + row['aws_id'] + '&view=' + view + '">' + row['aws_id'] + '</a></td><td>' + row['variable'] + '</td><td>' + row['message'] + '</td><td>' + last_owner + '</td></tr>\n'
 
-    return
+    # send to the last owner
+    msg = html_header + table_top + table_header_owner + last_owner_html + table_bottom
+    functions.gmail_send([last_owner_email], timestep + ' data errors', 'message is in html', msg)
 
-
-def job_check_minutes_values(day):
-    logging.debug('ran job_check_minutes_values(' + day.strftime('%Y-%m-%d') + ')')
-
-	# for rain gauges, only check rain
-    sql = '''
-            (
-                # air temp
-                SELECT
-                    aws_id,
-                    'airT' AS var,
-                    'air temp outside allowed range (-10, 50)' AS msg
-                FROM tbl_data_minutes
-                WHERE
-					aws_id NOT LIKE 'TBRG%' AND
-                    DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
-                    (airT IS NULL OR airT NOT BETWEEN -10 AND 50)
-                GROUP BY aws_id
-            )
-            UNION
-            (
-                # wind			
-				SELECT 
-					aws_id,  
-					'Wmax' AS var,
-					'wind max zero or null' AS msg	
-				FROM tbl_data_minutes 
-				WHERE 
-					aws_id NOT LIKE 'TBRG%' AND
-					DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''"
-				GROUP BY aws_id
-				HAVING (SUM(Wmax) <= 0 OR SUM(Wmax) IS NULL)
-            )
-            UNION
-            (
-                # rain
-                SELECT
-                    aws_id,
-                    'rain' AS var,
-                    'rain outside allowed range (0, 100)' AS msg
-                FROM tbl_data_minutes
-                WHERE
-                    DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
-                    (rain IS NULL OR rain NOT BETWEEN 0 AND 100)
-                GROUP BY aws_id
-            )
-            UNION
-            (
-                # battery - 6-7 range for AWNRM
-                SELECT
-                    aws_id,
-                    'batt' AS var,
-                    'battery outside allowed range (12, 15.5)' AS msg
-                FROM tbl_data_minutes
-                WHERE
-                    DATE(stamp) = "''' + day.strftime('%Y-%m-%d') + '''" AND
-					(						
-						batt IS NULL OR 
-						#batt NOT BETWEEN 6 AND 7 OR -- I don't know why I can't include this range here. 
-						batt NOT BETWEEN 12 AND 15.5
-					)
-                GROUP BY aws_id
-            )
-            ORDER BY aws_id;
-    '''
-
-    # get the data
-    conn = functions.db_connect()
-    rows = functions.db_query(conn, sql)
-    functions.db_disconnect(conn)
-
-    # make a table of the data
-    tbl = '<table>\n'
-    tbl += '\t<tr><th>aws_id</th><th>variable</th><th>message</th></tr>\n'
-    cnt = 0
-    for row in rows:
-        tbl += '\t<tr><td><a href="http://aws.naturalresources.sa.gov.au/samurraydarlingbasin?aws_id=' + row['aws_id'] + '&view=today">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td></tr>\n'
-        cnt += 1
-    tbl += '</table>'
-
-    html = '<h4>Errors in minute readings for ' + day.strftime('%Y-%m-%d') + '</h4>\n' + tbl
-    # send an email if there are errors
-    if cnt > 0:
-        functions.gmail_send(settings.ERROR_MSG_RECEIVERS, 'minute data errors', 'message is in html', html)
+    # send the admin email (all stations)
+    msg = html_header + table_top + table_header_admin + admin_html + table_bottom
+    functions.gmail_send(settings.ERROR_MSG_RECEIVERS, timestep + ' data errors', 'message is in html', msg)
 
     return
 
@@ -247,35 +133,35 @@ def job_check_minutes_values(day):
 def job_check_latest_readings():
     logging.debug('ran job_check_latest_readings()')
     sql = '''
-    SELECT m.aws_id, m.name, m.owner, m.manager_email FROM (
-        SELECT
-            a.aws_id AS aws_id,
-            a.name,
-            a.owner,
-            a.manager_email,
-            b.aws_id AS other
-        FROM (
+        SELECT m.aws_id, m.name, m.owner, m.manager_email, m.station_base_url FROM (
             SELECT
-                aws_id,
-                name,
-                owner,
-                manager_email
-            FROM tbl_stations
-            INNER JOIN tbl_owners
-            ON tbl_stations.owner = tbl_owners.owner_id
-            WHERE STATUS = 'on' ORDER BY aws_id) AS a
-        LEFT JOIN (SELECT DISTINCT aws_id FROM tbl_data_minutes WHERE DATE(stamp) = CURDATE()) AS b
-        ON a.aws_id = b.aws_id
-        HAVING b.aws_id IS NULL) AS m
-    ORDER BY OWNER, aws_id;
+                a.aws_id AS aws_id,
+                a.name,
+                a.owner,
+                a.manager_email,
+                a.station_base_url,
+                b.aws_id AS other
+            FROM (
+                SELECT
+                    aws_id,
+                    NAME,
+                    OWNER,
+                    manager_email,
+                    station_base_url
+                FROM tbl_stations
+                INNER JOIN tbl_owners
+                ON tbl_stations.owner = tbl_owners.owner_id
+                WHERE STATUS = 'on' ORDER BY aws_id) AS a
+            LEFT JOIN (SELECT DISTINCT aws_id FROM tbl_data_minutes WHERE DATE(stamp) = CURDATE()) AS b
+            ON a.aws_id = b.aws_id
+            HAVING b.aws_id IS NULL) AS m
+        ORDER BY OWNER, aws_id;
     '''
 
     # get the data
     conn = functions.db_connect()
     rows = functions.db_query(conn, sql)
     functions.db_disconnect(conn)
-
-    # split the data into per-owner chunks
 
     last_owner = ''
     last_owner_email = ''
@@ -299,8 +185,8 @@ def job_check_latest_readings():
             last_owner_email = row['manager_email']
             last_owner_html = ''
 
-        last_owner_html += '\t<tr><td><a href="http://aws.naturalresources.sa.gov.au/samurraydarlingbasin?aws_id=' + row['aws_id'] + '">' + row['aws_id'] + '</a></td><td>' + row['name'] + '</td></tr>\n'
-        admin_html += '\t<tr><td><a href="http://aws.naturalresources.sa.gov.au/samurraydarlingbasin?aws_id=' + row['aws_id'] + '">' + row['aws_id'] + '</a></td><td>' + row['name'] + '</td><td>' + last_owner + '</td></tr>\n'
+        last_owner_html += '\t<tr><td><a href="' + row['station_base_url'] + '?aws_id=' + row['aws_id'] + '">' + row['aws_id'] + '</a></td><td>' + row['name'] + '</td></tr>\n'
+        admin_html += '\t<tr><td><a href="' + row['station_base_url'] + '?aws_id=' + row['aws_id'] + '">' + row['aws_id'] + '</a></td><td>' + row['name'] + '</td><td>' + last_owner + '</td></tr>\n'
 
     # send to the last owner
     msg = html_header + table_top + table_header_owner + last_owner_html + table_bottom
@@ -335,12 +221,12 @@ if __name__ == "__main__":
             job_calc_days(yesterday)
         elif hr == 8:
             yesterday = datetime.datetime.now() - timedelta(hours=24)
-            job_check_days_values(yesterday)
+            job_check_values(yesterday, 'days')
             # check minute values for yesterday to cover time after 15:00 check
-            job_check_minutes_values(yesterday)
+            job_check_values(yesterday, 'minutes')
         elif hr in [9, 12, 15]:
             today = datetime.datetime.now()
-            job_check_minutes_values(today)
+            job_check_values(today, 'minutes')
         elif hr == 10:
             job_check_latest_readings()
     except Exception, e:
