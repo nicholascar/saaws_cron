@@ -74,6 +74,8 @@ def send_all_csv_files_to_dfw(day):
     logging.debug('call send_all_csv_files_to_dfw(' + day.strftime('%Y-%m-%d') + ')')
 
     # create the data and file names
+    awnrm_file_name = 'AWNRM_' + day.strftime("%Y%m%d") + '.csv'
+    awnrm_csv_file = StringIO.StringIO(get_minutes_data_as_csv('AWNRM', day))
     samdb_file_name = 'SAMDB_' + day.strftime("%Y%m%d") + '.csv'
     samdb_csv_file = StringIO.StringIO(get_minutes_data_as_csv('SAMDB', day))
     senrm_file_name = 'SENRM_' + day.strftime("%Y%m%d") + '.csv'
@@ -83,6 +85,7 @@ def send_all_csv_files_to_dfw(day):
     ftp = FTP(settings.DFW_FTP_SRV)
     ftp.set_debuglevel(0)
     ftp.login(settings.DFW_FTP_USR, settings.DFW_FTP_PWD)
+    ftp.storbinary('STOR ' + awnrm_file_name, awnrm_csv_file)
     ftp.storbinary('STOR ' + samdb_file_name, samdb_csv_file)
     ftp.storbinary('STOR ' + senrm_file_name, senrm_csv_file)
     ftp.quit()

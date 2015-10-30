@@ -271,6 +271,10 @@ def send_add_wdtf_zipfiles_to_bom(day):
     s = send_wdtf_zipfile(conn, zfp)
     os.remove(zfp)
 
+    zfp = make_wdtf_zip_file(conn, 'LMW', day, settings.APPLICATION_DIR)
+    s = send_wdtf_zipfile(conn, zfp)
+    os.remove(zfp)
+
     functions.db_disconnect(conn)
 
     return s
