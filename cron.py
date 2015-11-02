@@ -116,8 +116,8 @@ def job_check_values(day, minutes_or_days):
             last_owner_email = row['manager_email']
             last_owner_html = ''
 
-        last_owner_html += '\t<tr><td><a href="' + row['station_base_url'] + '?aws_id=' + row['aws_id'] + '&view=' + view + '">' + row['aws_id'] + '</a></td><td>' + row['variable'] + '</td><td>' + row['message'] + '</td></tr>\n'
-        admin_html += '\t<tr><td><a href="' + row['station_base_url'] + '?aws_id=' + row['aws_id'] + '&view=' + view + '">' + row['aws_id'] + '</a></td><td>' + row['variable'] + '</td><td>' + row['message'] + '</td><td>' + last_owner + '</td></tr>\n'
+        last_owner_html += '\t<tr><td><a href="' + row['station_base_url'] + '?aws_id=' + row['aws_id'] + '&view=' + view + '">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td></tr>\n'
+        admin_html += '\t<tr><td><a href="' + row['station_base_url'] + '?aws_id=' + row['aws_id'] + '&view=' + view + '">' + row['aws_id'] + '</a></td><td>' + row['var'] + '</td><td>' + row['msg'] + '</td><td>' + last_owner + '</td></tr>\n'
 
     # send to the last owner
     msg = html_header + table_top + table_header_owner + last_owner_html + table_bottom
